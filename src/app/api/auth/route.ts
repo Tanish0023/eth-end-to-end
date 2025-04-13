@@ -3,23 +3,58 @@
 import { db } from "@/lib/db";
 import { NextResponse } from "next/server";
 
-import { HDNodeWallet, Wallet, Mnemonic } from "ethers";
+import { HDNodeWallet } from "ethers";
+import { mnemonicToSeedSync } from "bip39";
 
-export async function POST(){
+const seed = mnemonicToSeedSync(process.env.MNEMONIC!);
+
+export async function POST(req: Request){
     try{
-        const mnemonic = Mnemonic.fromPhrase("virus sleep example price fold excuse hat any cement clutch autumn strong");
-        const keyPair1 = HDNodeWallet.fromMnemonic(mnemonic).publicKey;
-        const keyPair2 = HDNodeWallet.fromMnemonic(mnemonic).publicKey;
-        const keyPair3 = HDNodeWallet.fromMnemonic(mnemonic).publicKey;
-        const keyPair4 = HDNodeWallet.fromMnemonic(mnemonic).publicKey;
-        const keyPair5 = HDNodeWallet.fromMnemonic(mnemonic).publicKey;
-        const keyPair6 = HDNodeWallet.fromMnemonic(mnemonic).publicKey;
-        const keyPair7 = HDNodeWallet.fromMnemonic(mnemonic).publicKey;
-        const keyPair8 = HDNodeWallet.fromMnemonic(mnemonic).publicKey;
+        const { username, password } = await req.json();
 
-        // console.log(keyPair);
+        const user = await db.user.upsert({
+            where: {
+              username: username,
+            },
+            create: {
+              username: username,
+              password: password,
+              indexer: 0,
+            },
+            update: {
+              username: username, 
+            },
+        });
         
-        return NextResponse.json({data: [keyPair1, keyPair2, keyPair3, keyPair4, keyPair5, keyPair6, keyPair7, keyPair8]});
+        const indexer = user.indexer;
+    
+        const hdNode = HDNodeWallet.fromSeed(seed);
+        const child = hdNode.derivePath(`m/44'/60'/${indexer}'/0`);
+
+        console.log(user);
+        console.log(child);
+        
+
+        const newKey = await db.userKeys.create({
+            data:{
+                publicKey: child.address,
+                privateKey: child.privateKey,
+                userId: user.id
+            }
+        })
+
+        await db.user.update({
+            where:{
+                id: user.id
+            },
+            data:{
+                indexer:{
+                    increment: 1
+                }
+            }
+        })
+
+        return NextResponse.json(newKey);
 
     }catch(error){  
         console.log("[AUTH], ",error);
